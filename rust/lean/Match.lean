@@ -93,3 +93,21 @@ theorem far_threshold_bound (l : List Nat) (hs : l.Pairwise (· ≥ ·)) (k : Na
 /-- With k = ⌊p·N/q⌋ accepted impostors out of N, the empirical FAR c/N is at most α = p/q. -/
 theorem far_le_alpha (c N p q : Nat) (h : c ≤ p * N / q) : c * q ≤ p * N :=
   Nat.le_trans (Nat.mul_le_mul_right q h) (Nat.div_mul_le_self (p * N) q)
+
+/-! ## CNN + palm-ridge fusion (src/ridges.rs `fuse`, training/calibrate_fusion.py)
+
+Fixed point: cosine c and ridge similarity R − d (distance d ≤ R) on the scale R, weight w out of
+W. fused = w·c + (W − w)·(R − d). A higher cosine or a lower ridge distance never lowers the fused
+score, so neither feature can push a better-matching image below a worse one. -/
+
+def fuse (W w R c d : Nat) : Nat := w * c + (W - w) * (R - d)
+
+theorem fuse_mono (W w R c₁ c₂ d₁ d₂ : Nat) (hc : c₁ ≤ c₂) (hd : d₂ ≤ d₁) :
+    fuse W w R c₁ d₁ ≤ fuse W w R c₂ d₂ := by
+  unfold fuse
+  exact Nat.add_le_add (Nat.mul_le_mul_left w hc) (Nat.mul_le_mul_left (W - w) (by omega))
+
+/-- w = W is the CNN alone; w = 0 is the ridges alone (up to the scale W). -/
+theorem fuse_ends (W R c d : Nat) : fuse W W R c d = W * c ∧ fuse W 0 R c d = W * (R - d) := by
+  unfold fuse
+  simp

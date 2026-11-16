@@ -7,6 +7,18 @@ It replaces `app.py` (Streamlit), `client/*.py` and `preprocess/*.py`. Training 
 metrics) that every command here reads; see [`training/README.md`](../training/README.md).
 `palmprint verify-model` checks that the ONNX file is exactly what the trainer exported.
 
+**Palm ridges and faces** (from the `palmid` crate, [dhaneshkk/test1_palm](https://github.com/dhaneshkk/test1_palm)):
+
+* `build-db` also writes palm-ridge codes (`ridge_codes.npy`): Competitive Code (orientation of the
+  strongest dark-line Gabor response, 28×28 cells) on the same 138×138 ROI the CNN sees. Matching
+  re-ranks the 50 best cosine candidates by `w · cosine + (1 − w) · (1 − ridge distance)`. The
+  weight and threshold come from Python (`pair-scores` → `training/calibrate_fusion.py` → model
+  card); without a calibrated fusion the CNN ranks alone and ridge distances are only reported.
+  `eval` reports CNN, ridge-only and fused metrics on the same test pairs.
+* `serve` also finds faces in the uploaded image (YuNet, MIT, `models/NOTICE-yunet.md`), runs
+  MediaPipe's 468-point face mesh and draws its Delaunay triangulation. Display only: faces are never
+  matched. The mesh model is embedded in the `palmid` crate.
+
 ```bash
 pip install onnxruntime                       # provides libonnxruntime (loaded at run time)
 export ORT_DYLIB_PATH=$(python3 -c "import onnxruntime,os,glob;print(glob.glob(os.path.dirname(onnxruntime.__file__)+'/capi/libonnxruntime.so*')[0])")
@@ -18,6 +30,7 @@ $B match some_palm.tiff                       # top-5 + match verdict (threshold
 $B embed some_palm.png                        # 512-d embedding as JSON
 $B eval                                       # EER, TAR@FAR, MCC at the threshold, rank-1 (card's test palms when a card exists)
 $B verify-model                               # SHA-256 + embedding parity vs the Python export (needs the card)
+$B pair-scores --split cal --out ../data/cal_pairs.npy   # CNN + ridge scores per pair, for Python fusion calibration
 $B build-db ../dataset/archive/session1 ../dataset/archive/session2 --roi-dir ../dataset/preprocessed_images
 $B serve --roi-dir ../dataset/preprocessed_images   # match thumbnails, like the Streamlit app
 ```
@@ -47,10 +60,11 @@ JPEG decoding can differ by a grey level from OpenCV's libjpeg-turbo. TIFF and P
 `app.py`). The card sits next to the model as `<model>.card.json`. The committed
 `palmprint_encoder_512.onnx` (exported from the prototype's `.pth`) has no card, so it keeps 0.80.
 
-`lean/Match.lean` proves six properties (Lean 4.31, kernel only), and `src/lean_mirror.rs` checks
+`lean/Match.lean` proves eight properties (Lean 4.31, kernel only), and `src/lean_mirror.rs` checks
 them on the same arithmetic. The training-side threshold rule: at most ⌊α·N⌋ calibration impostor
 scores reach the threshold the trainer picks, so the calibration FAR is ≤ α (`far_threshold_bound`,
-`far_le_alpha`). The match rule:
+`far_le_alpha`). Fusion: a higher cosine or a lower ridge distance never lowers the fused score,
+and the weight's ends are the CNN alone and the ridges alone (`fuse_mono`, `fuse_ends`). The match rule:
 * the result list is never empty;
 * the below-threshold fallback never turns "no match" into "match";
 * a higher threshold never adds a match;

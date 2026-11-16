@@ -12,6 +12,16 @@ pub struct Split {
     pub test: Vec<usize>,
 }
 
+/// CNN + palm-ridge score fusion, chosen in Python (training/calibrate_fusion.py).
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct Fusion {
+    pub weight: f32,
+    pub threshold: f32,
+    pub ridge_shift: isize,
+    #[serde(default)]
+    pub target_far: f64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelCard {
     pub model: String,
@@ -22,6 +32,8 @@ pub struct ModelCard {
     pub split: Split,
     #[serde(default)]
     pub metrics: serde_json::Value,
+    #[serde(default)]
+    pub fusion: Option<Fusion>,
 }
 
 /// `models/x.onnx` → `models/x.card.json`

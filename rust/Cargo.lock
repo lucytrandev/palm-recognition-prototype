@@ -668,6 +668,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "palmid"
+version = "0.1.0"
+source = "git+https://github.com/dhaneshkk/test1_palm?rev=0125ce43ae3ae58b66965b627bbb542a7fc3599a#0125ce43ae3ae58b66965b627bbb542a7fc3599a"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "clap",
+ "futures-util",
+ "image",
+ "ndarray",
+ "ort",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "palmprint"
 version = "0.1.0"
 dependencies = [
@@ -678,6 +696,7 @@ dependencies = [
  "image",
  "ndarray",
  "ort",
+ "palmid",
  "serde",
  "serde_json",
  "sha2",

@@ -50,6 +50,18 @@ mod tests {
     }
 
     #[test]
+    fn fuse_monotone() {
+        // Lean fuse_mono on the f32 arithmetic actually used (round-to-nearest keeps monotonicity)
+        let mut x = 0x2545F4914F6CDD1Du64;
+        let mut u = || { x ^= x << 13; x ^= x >> 7; x ^= x << 17; (x >> 40) as f32 / (1u64 << 24) as f32 };
+        for _ in 0..200_000 {
+            let (w, c1, d1) = (u(), u(), u() as f64);
+            let (c2, d2) = (c1 + (1.0 - c1) * u(), d1 * u() as f64);
+            assert!(crate::ridges::fuse(c1, d1, w) <= crate::ridges::fuse(c2, d2, w));
+        }
+    }
+
+    #[test]
     fn far_threshold_matches_python() {
         // training/metrics.py: far_threshold([.5,.9,.1,.9,.3], .2) = 0.9000000357627869, (…, .4) = 0.5000000596046448
         let s = [0.5f32, 0.9, 0.1, 0.9, 0.3];

@@ -25,6 +25,8 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 sha2 = "0.10"
+# palm-ridge codes (CompCode), YuNet faces and the 468-point face mesh from the palmid crate
+palmid = { git = "https://github.com/dhaneshkk/test1_palm", rev = "0125ce43ae3ae58b66965b627bbb542a7fc3599a" }
 
 [profile.release]
 opt-level = 3

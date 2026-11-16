@@ -53,6 +53,22 @@ notebook `training/train_colab.ipynb`.
 The exported embedding is the 512-d backbone output, as before; the projection head is used only for
 the loss. Inputs are gray/255 replicated to 3 channels with no mean/std, as in the prototype.
 
+## Palm-ridge fusion
+
+The CNN embedding can be fused with palm-ridge codes (fixed Gabor filters, nothing to train). The
+split stays the same: Rust computes features, Python decides parameters.
+
+```bash
+$B pair-scores --split cal --out ../data/cal_pairs.npy            # Rust: cosine + ridge distance per calibration pair
+python training/calibrate_fusion.py ../data/cal_pairs.npy rust/models/palmprint_encoder_512.card.json
+$B eval                                                          # Rust: CNN / ridges / fused on the test palms
+```
+
+`calibrate_fusion.py` scans w = 0, 0.05 … 1 for the lowest calibration EER, sets the fused
+threshold with the same FAR rule, and writes `fusion` into the card. The fused score is computed in
+float32 in the same order on both sides, so Rust and Python agree exactly (checked: identical
+TP/FP/FN/TN on the calibration pairs).
+
 ## Smoke test (synthetic hands, not an accuracy claim)
 
 `synth.py` draws hands whose palm lines depend on identity, with jittered pose, brightness and noise.
@@ -74,6 +90,17 @@ The calibrated threshold is much stricter than the test-set 0.1 % FAR point (0.9
 calibration palms give few high impostor scores to calibrate on; with the real dataset's ~90
 calibration palms it will sit much closer. A 4-epoch run gave scores bunched near 1 (threshold
 0.99995) and one pair differed between Rust and Python by float rounding at that threshold.
+
+Fusion on the same synthetic run (calibration chose w = 0.90; test palms, exact):
+
+| | CNN | ridges only | fused |
+|---|---|---|---|
+| EER | 2.10 % | 19.99 % | 1.93 % |
+| TAR @ FAR 0.1 % | 93.0 % | 49.9 % | 93.3 % |
+| at its calibrated threshold: TAR / FAR / MCC | 33.6 % / 0 % / 0.558 | — | 55.7 % / 0 % / 0.728 |
+
+The synthetic hands draw only a few thick lines, which favours the CNN; how much ridges add on real
+palms is what the Colab run will show.
 
 Real accuracy needs the real dataset (Kaggle `saqibshoaibdz/palm-dataset`); it was not reachable from
 the build environment.
