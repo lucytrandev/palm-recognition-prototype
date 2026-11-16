@@ -1,5 +1,9 @@
 # Palmprint Recognition for Authentication using Self-Supervised Learning
 
+> **Training in Python, inference in Rust:** `training/` (prepare → SupCon + SAM training → calibrated
+> threshold + MCC on unseen palms → ONNX + model card) feeds the Rust inference crate in `rust/`.
+> See [training/README.md](training/README.md) and the single-cell notebook `training/train_colab.ipynb`.
+
 ## Project Goal and Approach
 
 

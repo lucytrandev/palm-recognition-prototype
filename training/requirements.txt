@@ -1,0 +1,8 @@
+# training only (inference is the Rust crate in ../rust)
+torch>=2.3
+torchvision>=0.18
+onnx>=1.16
+onnxruntime>=1.18
+opencv-python-headless>=4.9
+numpy>=1.26
+kagglehub>=0.3

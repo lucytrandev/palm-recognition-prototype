@@ -1,0 +1,35 @@
+[package]
+name = "palmprint"
+version = "0.1.0"
+edition = "2021"
+description = "Rust inference for the palmprint recognition prototype: preprocessing, ResNet-18 encoder (ONNX), cosine matching, web UI + OpenAI-compatible API"
+license = "Apache-2.0"
+
+[lib]
+name = "palmprint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "palmprint"
+path = "src/main.rs"
+
+[dependencies]
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "ndarray"] }
+ndarray = "0.16"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff"] }
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.test]
+opt-level = 2
