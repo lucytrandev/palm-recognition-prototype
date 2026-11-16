@@ -52,7 +52,10 @@ pub struct Thumb {
 
 #[derive(Serialize)]
 pub struct Outcome {
-    pub preprocess: Trace,
+    /// `None` when no palm region was found (the response then carries only faces, if any)
+    pub preprocess: Option<Trace>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     pub roi_png: String,
     pub match_found: bool,
     pub threshold: f32,
@@ -88,7 +91,26 @@ impl Engine {
     pub fn run(&mut self, bytes: &[u8]) -> Result<Outcome> {
         let t = std::time::Instant::now();
         let img = load_bytes(bytes)?;
-        let st = preprocess(&img).ok_or_else(|| anyhow!("could not preprocess the image (no palm region found above the threshold)"))?;
+        let (faces, face_png) = match self.faces.as_mut() {
+            Some(f) => {
+                let (out, vis) = f.run(&img)?;
+                let png = vis.map(|v| {
+                    let s = (480.0 / v.w.max(v.h) as f32).min(1.0);
+                    let v = if s < 1.0 { palmid::imgproc::resize_area(&v, (v.w as f32 * s) as usize, (v.h as f32 * s) as usize) } else { v };
+                    png_data_uri(&GrayImage { w: v.w, h: v.h, data: v.data })
+                }).unwrap_or_default();
+                (out, png)
+            }
+            None => (vec![], String::new()),
+        };
+        let Some(st) = preprocess(&img) else {
+            if faces.is_empty() {
+                return Err(anyhow!("could not preprocess the image (no palm region found above the threshold)"));
+            }
+            return Ok(Outcome { preprocess: None, note: Some("no palm region found; faces only".into()), roi_png: String::new(), match_found: false,
+                threshold: self.fusion.as_ref().map(|f| f.threshold).unwrap_or(self.threshold), matches: vec![], scoring: "none".into(), faces, face_png,
+                latency_ms: t.elapsed().as_secs_f64() * 1e3 });
+        };
         let emb = self.encoder.embed(&st.normalized, TARGET)?;
         // (name, ranking score, cosine, ridge distance)
         let (ranked, match_found, threshold, scoring): (Vec<(String, f32, f32, Option<f32>)>, bool, f32, String) =
@@ -116,18 +138,6 @@ impl Engine {
                     (v, match_found, threshold, "cnn".into())
                 }
             };
-        let (faces, face_png) = match self.faces.as_mut() {
-            Some(f) => {
-                let (out, vis) = f.run(&img)?;
-                let png = vis.map(|v| {
-                    let s = (480.0 / v.w.max(v.h) as f32).min(1.0);
-                    let v = if s < 1.0 { palmid::imgproc::resize_area(&v, (v.w as f32 * s) as usize, (v.h as f32 * s) as usize) } else { v };
-                    png_data_uri(&GrayImage { w: v.w, h: v.h, data: v.data })
-                }).unwrap_or_default();
-                (out, png)
-            }
-            None => (vec![], String::new()),
-        };
         let matches = ranked
             .into_iter()
             .map(|(name, score, cosine, ridge_distance)| {
@@ -140,7 +150,7 @@ impl Engine {
                 Thumb { name: m.name, score: m.score, cosine, ridge_distance, thumbnail }
             })
             .collect();
-        Ok(Outcome { preprocess: st.trace, roi_png: png_data_uri(&st.resized), match_found, threshold, matches, scoring, faces, face_png, latency_ms: t.elapsed().as_secs_f64() * 1e3 })
+        Ok(Outcome { preprocess: Some(st.trace), note: None, roi_png: png_data_uri(&st.resized), match_found, threshold, matches, scoring, faces, face_png, latency_ms: t.elapsed().as_secs_f64() * 1e3 })
     }
 }
 

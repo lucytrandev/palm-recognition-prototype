@@ -27,8 +27,8 @@ f.onchange=async()=>{const file=f.files[0];if(!file)return;
  const r=await fetch('/api/match',{method:'POST',body:fd});const j=await r.json();
  if(!r.ok){out.innerHTML='<p class="err"></p>';out.firstChild.textContent=j.error||'error';return;}
  const v=j.match_found?'<div class="verdict yes">Match found</div>':'<div class="verdict nomatch">No match found above the threshold</div>';
- let h=v+'<p class="muted">threshold '+(j.threshold*100).toFixed(0)+'% · '+j.latency_ms.toFixed(0)+' ms · ROI '+j.preprocess.roi_w+'×'+j.preprocess.roi_h+' at ('+j.preprocess.cx+', '+j.preprocess.cy+') · scoring '+j.scoring+'</p>';
- h+='<p><b>Preprocessed ROI</b><br><img src="'+j.roi_png+'" width="138" height="138" alt="ROI"></p>';
+ let h=v+'<p class="muted">threshold '+(j.threshold*100).toFixed(0)+'% · '+j.latency_ms.toFixed(0)+' ms · '+(j.preprocess?'ROI '+j.preprocess.roi_w+'×'+j.preprocess.roi_h+' at ('+j.preprocess.cx+', '+j.preprocess.cy+') · scoring '+j.scoring:j.note)+'</p>';
+ if(j.roi_png)h+='<p><b>Preprocessed ROI</b><br><img src="'+j.roi_png+'" width="138" height="138" alt="ROI"></p>';
  if(j.face_png){h+='<p><b>Faces: '+j.faces.length+'</b> <span class="muted">(468-point mesh, Delaunay triangles: '+j.faces.map(f=>f.triangles).join(', ')+'; display only)</span><br><img src="'+j.face_png+'" style="max-width:480px;width:100%" alt="face mesh"></p>';}
  h+='<div class="grid">';
  for(const m of j.matches){h+='<div>'+(m.thumbnail?'<img src="'+m.thumbnail+'" alt="">':'<div class="muted" style="aspect-ratio:1;background:#eee;display:flex;align-items:center;justify-content:center">no thumbnail</div>')+
