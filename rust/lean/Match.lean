@@ -50,3 +50,46 @@ theorem found_all_above (l : List Nat) (t : Nat) (h : matchFound l t = true) :
     simp only [List.isEmpty_iff, List.filter_eq_nil_iff] at hemp
     exact absurd hxt (by simpa using hemp x hx)
   · intro s hs; simpa using (List.mem_filter.mp hs).2
+
+/-! ## Threshold calibration (training/metrics.py `far_threshold`)
+
+Impostor scores sorted in descending order; the threshold is chosen strictly above the score at
+index k = ⌊α·N⌋. Then at most k impostor pairs are accepted (score ≥ threshold), so the calibration
+FAR is at most α. Scores are the same fixed-point naturals as above. -/
+
+theorem filter_ge_nil (l : List Nat) (t : Nat) (h : ∀ x ∈ l, x < t) :
+    l.filter (fun s => decide (t ≤ s)) = [] := by
+  rw [List.filter_eq_nil_iff]
+  intro x hx
+  have := h x hx
+  simp
+  omega
+
+/-- At most k scores reach a threshold placed above the k-th (0-based) largest score. -/
+theorem far_threshold_bound (l : List Nat) (hs : l.Pairwise (· ≥ ·)) (k : Nat) (hk : k < l.length)
+    (t : Nat) (ht : l[k] < t) : (l.filter (fun s => decide (t ≤ s))).length ≤ k := by
+  induction l generalizing k with
+  | nil => simp at hk
+  | cons a l ih =>
+    rw [List.pairwise_cons] at hs
+    cases k with
+    | zero =>
+      simp at ht
+      have : (a :: l).filter (fun s => decide (t ≤ s)) = [] := by
+        apply filter_ge_nil
+        intro x hx
+        simp at hx
+        rcases hx with rfl | hx
+        · exact ht
+        · have := hs.1 x hx
+          omega
+      simp [this]
+    | succ k =>
+      simp at ht hk
+      have := ih hs.2 k (by omega) ht
+      simp only [List.filter_cons]
+      split <;> simp <;> omega
+
+/-- With k = ⌊p·N/q⌋ accepted impostors out of N, the empirical FAR c/N is at most α = p/q. -/
+theorem far_le_alpha (c N p q : Nat) (h : c ≤ p * N / q) : c * q ≤ p * N :=
+  Nat.le_trans (Nat.mul_le_mul_right q h) (Nat.div_mul_le_self (p * N) q)

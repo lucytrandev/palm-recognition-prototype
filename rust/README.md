@@ -2,8 +2,10 @@
 
 A Rust port of this prototype's inference path, from image to match:
 preprocessing → trained ResNet-18 encoder (ONNX) → cosine top-k against `output/embeddings/`.
-It replaces `app.py` (Streamlit), `client/*.py` and `preprocess/*.py`. Training (`self_supervised/`)
-stays in Python.
+It replaces `app.py` (Streamlit), `client/*.py` and `preprocess/*.py`. Training stays in Python:
+`training/` trains and exports the encoder plus a model card (calibrated threshold, test split,
+metrics) that every command here reads; see [`training/README.md`](../training/README.md).
+`palmprint verify-model` checks that the ONNX file is exactly what the trainer exported.
 
 ```bash
 pip install onnxruntime                       # provides libonnxruntime (loaded at run time)
@@ -14,7 +16,8 @@ B=target/release/palmprint
 $B serve                                      # web UI at http://127.0.0.1:8501 + /v1/chat/completions
 $B match some_palm.tiff                       # top-5 + match verdict (threshold 0.80, as app.py)
 $B embed some_palm.png                        # 512-d embedding as JSON
-$B eval                                       # EER, TAR@FAR, MCC at 0.80, rank-1 on the committed database
+$B eval                                       # EER, TAR@FAR, MCC at the threshold, rank-1 (card's test palms when a card exists)
+$B verify-model                               # SHA-256 + embedding parity vs the Python export (needs the card)
 $B build-db ../dataset/archive/session1 ../dataset/archive/session2 --roi-dir ../dataset/preprocessed_images
 $B serve --roi-dir ../dataset/preprocessed_images   # match thumbnails, like the Streamlit app
 ```
@@ -40,8 +43,14 @@ bottom-right edge, where the ROI is truncated to 276×243:
 
 JPEG decoding can differ by a grey level from OpenCV's libjpeg-turbo. TIFF and PNG are exact.
 
-`lean/Match.lean` proves four properties of the match rule (Lean 4.31, kernel only), and
-`src/lean_mirror.rs` checks them on a grid:
+**Threshold:** `--threshold` if given, else the model card's calibrated threshold, else 0.80 (as
+`app.py`). The card sits next to the model as `<model>.card.json`. The committed
+`palmprint_encoder_512.onnx` (exported from the prototype's `.pth`) has no card, so it keeps 0.80.
+
+`lean/Match.lean` proves six properties (Lean 4.31, kernel only), and `src/lean_mirror.rs` checks
+them on the same arithmetic. The training-side threshold rule: at most ⌊α·N⌋ calibration impostor
+scores reach the threshold the trainer picks, so the calibration FAR is ≤ α (`far_threshold_bound`,
+`far_le_alpha`). The match rule:
 * the result list is never empty;
 * the below-threshold fallback never turns "no match" into "match";
 * a higher threshold never adds a match;

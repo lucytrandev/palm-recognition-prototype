@@ -45,6 +45,7 @@ pub fn mcc(tp: u64, fp: u64, fn_: u64, tn: u64) -> Option<f64> {
     (d > 0.0).then(|| (tp * tn - fp * fn_) / d)
 }
 
+/// `at_threshold` is exact (score ≥ threshold as f32); EER and TAR@FAR use 1e-4 score bins.
 pub fn evaluate(db: &Database, block: usize, threshold: f64) -> Result<Report> {
     let n = db.names.len();
     let parse = |s: &str| -> Result<(String, usize)> {
@@ -54,11 +55,12 @@ pub fn evaluate(db: &Database, block: usize, threshold: f64) -> Result<Report> {
     let parsed: Vec<(String, usize)> = db.names.iter().map(|s| parse(s)).collect::<Result<_>>()?;
     let pid: Vec<usize> = parsed.iter().map(|(_, k)| (k - 1) / block).collect();
     let d = db.dim;
+    let thr32 = threshold as f32;
     let threads = std::thread::available_parallelism().map(|v| v.get()).unwrap_or(4);
     // all pairs i<j: genuine/impostor histograms + nearest other neighbour per row
     let rows: Vec<usize> = (0..n).collect();
     let chunks: Vec<Vec<usize>> = (0..threads).map(|t| rows.iter().copied().filter(|r| r % threads == t).collect()).collect();
-    let results: Vec<(Vec<u64>, Vec<u64>, Vec<(usize, usize, f32)>)> = std::thread::scope(|sc| {
+    let results: Vec<(Vec<u64>, Vec<u64>, Vec<(usize, usize, f32)>, [u64; 2])> = std::thread::scope(|sc| {
         let hs: Vec<_> = chunks
             .iter()
             .map(|rows| {
@@ -66,6 +68,7 @@ pub fn evaluate(db: &Database, block: usize, threshold: f64) -> Result<Report> {
                 sc.spawn(move || {
                     let (mut g, mut im) = (vec![0u64; BINS], vec![0u64; BINS]);
                     let mut nn = vec![];
+                    let mut acc = [0u64; 2]; // exact accepts (score ≥ threshold): genuine, impostor
                     for &i in rows {
                         let a = &unit[i * d..(i + 1) * d];
                         let (mut best, mut bj) = (f32::MIN, usize::MAX);
@@ -79,12 +82,16 @@ pub fn evaluate(db: &Database, block: usize, threshold: f64) -> Result<Report> {
                                 bj = j;
                             }
                             if j > i {
-                                if pid[i] == pid[j] { g[bin(s)] += 1 } else { im[bin(s)] += 1 }
+                                let gen = pid[i] == pid[j];
+                                if gen { g[bin(s)] += 1 } else { im[bin(s)] += 1 }
+                                if s >= thr32 {
+                                    acc[!gen as usize] += 1;
+                                }
                             }
                         }
                         nn.push((i, bj, best));
                     }
-                    (g, im, nn)
+                    (g, im, nn, acc)
                 })
             })
             .collect();
@@ -92,7 +99,10 @@ pub fn evaluate(db: &Database, block: usize, threshold: f64) -> Result<Report> {
     });
     let (mut g, mut im) = (vec![0u64; BINS], vec![0u64; BINS]);
     let mut nn = vec![(0usize, 0f32); n];
-    for (gg, ii, nns) in results {
+    let mut exact = [0u64; 2];
+    for (gg, ii, nns, acc) in results {
+        exact[0] += acc[0];
+        exact[1] += acc[1];
         for k in 0..BINS {
             g[k] += gg[k];
             im[k] += ii[k];
@@ -127,8 +137,7 @@ pub fn evaluate(db: &Database, block: usize, threshold: f64) -> Result<Report> {
             (target, g_acc[k] as f64 / gt.max(1) as f64, thr_of(k))
         })
         .collect();
-    let kt = bin(threshold as f32);
-    let (tp, fp) = (g_acc[kt], i_acc[kt]);
+    let (tp, fp) = (exact[0], exact[1]); // exact (not binned) at the operating threshold
     let (fn_, tn) = (gt - tp, it - fp);
     let at_threshold = ThresholdStats { threshold, tar: tp as f64 / gt.max(1) as f64, far: fp as f64 / it.max(1) as f64, mcc: mcc(tp, fp, fn_, tn), tp, fp, fn_, tn };
     let rank1_any_other = (0..n).filter(|&i| pid[nn[i].0] == pid[i]).count() as f64 / n as f64;

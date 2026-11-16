@@ -42,6 +42,18 @@ impl Database {
         Ok(Self { names, dim, unit })
     }
 
+    /// Keep only rows whose index passes `keep` (e.g. the model card's test palms).
+    pub fn subset(&self, keep: impl Fn(usize, &str) -> bool) -> Self {
+        let mut out = Self { names: vec![], dim: self.dim, unit: vec![] };
+        for (i, n) in self.names.iter().enumerate() {
+            if keep(i, n) {
+                out.names.push(n.clone());
+                out.unit.extend_from_slice(&self.unit[i * self.dim..(i + 1) * self.dim]);
+            }
+        }
+        out
+    }
+
     pub fn similarities(&self, query: &[f32]) -> Vec<f32> {
         let q = normalize(query);
         self.unit.chunks_exact(self.dim).map(|r| r.iter().zip(&q).map(|(a, b)| a * b).sum()).collect()
