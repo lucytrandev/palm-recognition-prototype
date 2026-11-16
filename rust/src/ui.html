@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Palmprint Recognition</title>
+<style>
+body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f5f5;color:#222}
+header{padding:16px 24px;background:#fff;border-bottom:1px solid #e3e3e3}h1{margin:0;font-size:22px}
+main{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:20px;padding:20px 24px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:#fff;border:1px solid #e3e3e3;border-radius:8px;padding:14px 16px}
+img.up{max-width:100%;border-radius:6px;display:block}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid img{width:100%;border-radius:4px;background:#ddd;aspect-ratio:1}
+.score{color:#1a7f37;font-weight:600}.no{color:#9a6700}.err{color:#cf222e}.muted{color:#666;font-size:13px}
+.verdict{padding:8px 10px;border-radius:6px;margin:8px 0;font-weight:600}.yes{background:#dafbe1;color:#1a7f37}.nomatch{background:#fff8c5;color:#9a6700}
+</style></head><body>
+<header><h1>Palmprint Recognition</h1><span class="muted">Rust port · ResNet-18 encoder (ONNX) · cosine top-5</span></header>
+<main>
+<section class="card"><h3>Uploaded image</h3>
+<input type="file" id="f" accept=".jpg,.jpeg,.png,.tif,.tiff"><p class="muted">JPG, PNG or TIFF. The palm must be brighter than a dark background (fixed threshold 80).</p>
+<img id="prev" class="up" alt=""></section>
+<section class="card"><h3>Matching results</h3><div id="out" class="muted">Choose a palmprint image.</div></section>
+</main>
+<script>
+const f=document.getElementById('f'),out=document.getElementById('out'),prev=document.getElementById('prev');
+f.onchange=async()=>{const file=f.files[0];if(!file)return;
+ if(!/tiff?$/i.test(file.name))prev.src=URL.createObjectURL(file);else prev.removeAttribute('src');
+ out.textContent='Matching…';const fd=new FormData();fd.append('file',file);
+ const r=await fetch('/api/match',{method:'POST',body:fd});const j=await r.json();
+ if(!r.ok){out.innerHTML='<p class="err"></p>';out.firstChild.textContent=j.error||'error';return;}
+ const v=j.match_found?'<div class="verdict yes">Match found</div>':'<div class="verdict nomatch">No match found above the threshold</div>';
+ let h=v+'<p class="muted">threshold '+(j.threshold*100).toFixed(0)+'% · '+j.latency_ms.toFixed(0)+' ms · ROI '+j.preprocess.roi_w+'×'+j.preprocess.roi_h+' at ('+j.preprocess.cx+', '+j.preprocess.cy+')</p>';
+ h+='<p><b>Preprocessed ROI</b><br><img src="'+j.roi_png+'" width="138" height="138" alt="ROI"></p><div class="grid">';
+ for(const m of j.matches){h+='<div>'+(m.thumbnail?'<img src="'+m.thumbnail+'" alt="">':'<div class="muted" style="aspect-ratio:1;background:#eee;display:flex;align-items:center;justify-content:center">no thumbnail</div>')+
+   '<div class="score">Score: '+(m.score*100).toFixed(2)+'%</div><div class="muted"></div></div>';}
+ out.innerHTML=h+'</div>';
+ out.querySelectorAll('.grid > div .muted:last-child').forEach((el,i)=>el.textContent=j.matches[i].name);
+};
+</script></body></html>
