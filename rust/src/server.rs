@@ -38,7 +38,7 @@ pub struct Engine {
     pub top_k: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Thumb {
     pub name: String,
     /// the score used for ranking: fused when fusion is calibrated, else cosine
@@ -50,7 +50,7 @@ pub struct Thumb {
     pub thumbnail: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Outcome {
     /// `None` when no palm region was found (the response then carries only faces, if any)
     pub preprocess: Option<Trace>,
@@ -116,8 +116,9 @@ impl Engine {
         let (ranked, match_found, threshold, scoring): (Vec<(String, f32, f32, Option<f32>)>, bool, f32, String) =
             match (&self.ridges, &self.fusion) {
                 (Some((rdb, rc)), Some(f)) => {
-                    // re-rank the 50 best cosine candidates by the fused score
-                    let MatchResult { matches, .. } = self.db.best_matches(&emb, f32::INFINITY, 50);
+                    // fused score over the whole database (up to 20 000 images; beyond that, the 20 000
+                    // best by cosine), so a low CNN weight isn't undercut by a cosine pre-filter
+                    let MatchResult { matches, .. } = self.db.best_matches(&emb, f32::INFINITY, self.db.names.len().min(20_000));
                     let q = rc.code(&st.resized);
                     let mut v: Vec<_> = matches.into_iter().map(|m| {
                         let d = rc.distance(&q, &rdb.codes[self.index[&m.name]]) as f32;

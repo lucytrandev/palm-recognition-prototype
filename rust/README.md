@@ -11,7 +11,7 @@ metrics) that every command here reads; see [`training/README.md`](../training/R
 
 * `build-db` also writes palm-ridge codes (`ridge_codes.npy`): Competitive Code (orientation of the
   strongest dark-line Gabor response, 28×28 cells) on the same 138×138 ROI the CNN sees. Matching
-  re-ranks the 50 best cosine candidates by `w · cosine + (1 − w) · (1 − ridge distance)`. The
+  ranks the database (up to 20 000 images) by `w · cosine + (1 − w) · (1 − ridge distance)`. The
   weight and threshold come from Python (`pair-scores` → `training/calibrate_fusion.py` → model
   card); without a calibrated fusion the CNN ranks alone and ridge distances are only reported.
   `eval` reports CNN, ridge-only and fused metrics on the same test pairs.
@@ -87,3 +87,52 @@ committed embeddings, over all 71.8 M pairs:
 At FAR 0.216 %, a query against the 11,996-image database clears the 0.80 threshold for about 26
 impostor images on average. A synthetic drawing of a hand (`tests/fixtures/synthetic_input.png`) gets
 "match found" at 0.84.
+
+
+## Web app (`web/`, training + inference)
+
+`palmprint-web` is a [Topcoat](https://github.com/tokio-rs/topcoat) 0.12 app (Rust ≥ 1.99) that runs
+the same steps as the CLI and the Python scripts, from the browser, with live status:
+
+```
+ Train form ─► 1 prepare.py (Python) ─► 2 train.py, SAM (Python; epoch loss + calibration EER live)
+           ─► 3 verify (Rust) ─► 4 build database (Rust, progress) ─► 5 pair scores (Rust) → calibrate_fusion.py (Python)
+           ─► 6 evaluate on test palms (Rust) ─► swap the live engine  ── only Evaluating → Ready (lean/Pipeline.lean)
+ Upload ──► live engine ─► matches (score, CNN cosine, ridge distance), palm region, face mesh
+```
+
+```bash
+cargo install topcoat-cli --version 0.12.1 --locked
+topcoat asset bundle -p palmprint-web --release
+export ORT_DYLIB_PATH=…   # as above
+PP_PYTHON=$(which python3) cargo run -p palmprint-web --release        # http://127.0.0.1:3000
+```
+
+`cargo build` in `rust/` still builds only the CLI (`default-members`), so it keeps working on older
+Rust; the web app is `-p palmprint-web`.
+
+| env | default | |
+|---|---|---|
+| `PP_REPO` | `..` | repository root (where `training/` is) |
+| `PP_WORK` | `palmprint_work` | trained model, card, trained database, intermediate files, demo data |
+| `PP_PYTHON` | `python3` | interpreter with `training/requirements.txt` installed |
+| `PP_DATA` | — | image folders pre-filled in the form (comma-separated) |
+| `PP_MODEL` | `models/palmprint_encoder_512.onnx` | model served until something is trained |
+| `PP_ROI_DIR` | — | preprocessed ROIs (`<name>.npy`) for match thumbnails |
+| `PP_THREADS` | `4` | onnxruntime and torch threads |
+| `HOST` / `PORT` | `127.0.0.1` / `3000` | Topcoat |
+
+* The committed model and database serve until a run finishes; a finished run (model + card with
+  fusion + database in `PP_WORK`) is loaded again on the next start.
+* **Make demo data** writes synthetic hands (`training/synth.py`) so the pipeline can be tried without
+  the dataset; leave the folders field empty to train on them.
+* **Cancel** stops the Python child and marks the run failed; the live engine is untouched.
+* `POST /api/match` (used by the page), `POST /v1/chat/completions` (OpenAI-compatible; no image →
+  live status and the last results) and `GET /v1/models` run on the same live engine.
+* With fusion, the whole database (up to 20 000 images) is ranked by the fused score, so a low CNN
+  weight isn't undercut by a cosine pre-filter.
+
+Checked end to end on synthetic hands (60 palms, 6 epochs from scratch, 2 CPU threads, ≈ 9 min):
+the pipeline ran through all six phases, the weak 6-epoch CNN (test EER 36 %) led calibration to
+choose ridges only (w = 0), test MCC 0.24 for the CNN vs 0.68 fused, and an uploaded image matched
+its own palm's other images.

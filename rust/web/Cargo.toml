@@ -1,0 +1,17 @@
+[package]
+name = "palmprint-web"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"          # Topcoat 0.12
+description = "Topcoat web app for palmprint recognition: Python training (SAM) → Rust verify / index / fusion / eval → live matching, with live status"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+palmprint = { path = ".." }
+topcoat = "0.12.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+anyhow = "1"

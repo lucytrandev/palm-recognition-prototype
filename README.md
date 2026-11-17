@@ -32,12 +32,17 @@ calibrating, evaluating, the web page and the API, step by step.
 * **Inference (Rust):** bit-exact port of the preprocessing, ONNX encoder, cosine matching re-ranked
   with palm-ridge codes (CompCode) when a calibrated fusion is in the card, evaluation, a web page and
   an OpenAI-compatible API. See [rust/README.md](rust/README.md).
+* **Web app:** [`rust/web/`](rust/web) (Rust, [Topcoat](https://github.com/tokio-rs/topcoat) 0.12)
+  runs the whole training pipeline from the browser with live status (phase, epoch loss and
+  calibration-EER charts, log, test-palm results table with MCC) and matches uploaded images on the
+  live model. The trained model goes live only after evaluation (`rust/lean/Pipeline.lean`).
 * **One notebook:** [`training/train_colab.ipynb`](training/train_colab.ipynb) runs everything in a
   single Colab cell: data, training, Rust build, model check, database, fusion, test evaluation, an API
   call and the Lean check.
-* **Proofs:** `rust/lean/Match.lean` (Lean 4.31, no `sorry`): match-rule properties, the threshold
+* **Proofs:** `rust/lean/Match.lean` and `rust/lean/Pipeline.lean` (Lean 4.31, no `sorry`): match-rule properties, the threshold
   rule keeps the calibration FAR ≤ target (`far_threshold_bound`, `far_le_alpha`), and the fused score
-  never drops when the CNN or ridge match improves (`fuse_mono`, `fuse_ends`).
+  never drops when the CNN or ridge match improves (`fuse_mono`, `fuse_ends`), and the web app's
+  pipeline can't skip a stage or put a model live before evaluation (`ready_only_after_eval`, `no_skip_*`).
 
 ## Quick start
 
@@ -57,6 +62,15 @@ $B pair-scores --split cal --out ../data/cal_pairs.npy
 python ../training/calibrate_fusion.py ../data/cal_pairs.npy models/palmprint_encoder_512.card.json
 $B eval                      # CNN, ridges and fused on the unseen test palms
 $B serve                     # http://127.0.0.1:8501 and /v1/chat/completions
+```
+
+Or do all of it from the browser (needs Rust ≥ 1.99 for Topcoat):
+
+```bash
+cd rust
+cargo install topcoat-cli --version 0.12.1 --locked
+topcoat asset bundle -p palmprint-web --release
+PP_PYTHON=$(which python3) cargo run -p palmprint-web --release      # http://127.0.0.1:3000
 ```
 
 Without training, `cd rust && cargo build --release && target/release/palmprint serve` runs the

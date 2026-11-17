@@ -12,6 +12,7 @@ pub mod imgproc;
 pub mod lean_mirror;
 pub mod matcher;
 pub mod npy;
+pub mod ops;
 pub mod preprocess;
 pub mod ridges;
 pub mod server;

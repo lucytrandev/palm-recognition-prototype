@@ -6,6 +6,7 @@ For background, see the [README](README.md).
 
 * [1. What you get](#1-what-you-get)
 * [2. The fastest path: one Colab cell](#2-the-fastest-path-one-colab-cell)
+* [2b. Everything in the browser: the web app](#2b-everything-in-the-browser-the-web-app)
 * [3. Running it on your own machine](#3-running-it-on-your-own-machine)
 * [4. Train the model](#4-train-the-model)
 * [5. Check the model and build the database](#5-check-the-model-and-build-the-database)
@@ -44,6 +45,42 @@ For background, see the [README](README.md).
 
 To keep the results, download `rust/models/palmprint_encoder_512.onnx`, the `.card.json` and the
 `.parity_*.npy` files next to it.
+
+## 2b. Everything in the browser: the web app
+
+The web app runs training and matching from one page, with live progress. Set up §3 first (Python
+environment and `ORT_DYLIB_PATH`), then, with **Rust 1.99 or newer** (`rustup update`):
+
+```bash
+cd rust
+cargo install topcoat-cli --version 0.12.1 --locked
+topcoat asset bundle -p palmprint-web --release
+PP_PYTHON=$(which python3) cargo run -p palmprint-web --release
+```
+
+Open **http://127.0.0.1:3000**.
+
+**Train (right side).**
+
+1. **folders**: your session folders, comma-separated (e.g. `/data/palms/session1,/data/palms/session2`).
+   No dataset at hand? Press **Make demo data** and leave the field empty: it trains on drawn hands,
+   which only shows the pipeline works.
+2. **epochs** (40 is a start on a GPU; on a laptop CPU try 6–10 first), **loss** `supcon` (uses the
+   palm identities) or `simclr` (the original self-supervised loss), **target FAR** (0.001 = 0.1 % false
+   accepts), **ImageNet start** (needs internet once).
+3. **Start training.** The Pipeline panel walks through six phases: preparing → training (loss and
+   calibration error per epoch are charted) → verifying → building the database (progress bar) →
+   fusion → evaluating. **Cancel** stops it; the live model isn't touched.
+4. When it ends, the **Unseen test palms** table shows CNN, palm ridges and combined: error rate, true
+   accepts at 0.1 % false accepts, true/false accepts at the threshold, MCC and rank-1 (§7 explains
+   each). Only then does the **Live model** panel switch to the newly trained model.
+
+**Match (left side).** Choose a palm image: the result shows *match found* or *no match*, the palm
+region the model saw, any faces with their mesh, and the top 5 matches with the combined score, the
+network's cosine and the palm-line distance.
+
+Trained files go to `rust/palmprint_work/` (change with `PP_WORK`); the app reloads the last
+finished run on its next start. Other settings are listed in [rust/README.md](rust/README.md#web-app-web-training--inference).
 
 ## 3. Running it on your own machine
 
@@ -194,6 +231,10 @@ and triangles) and the preprocessing trace.
 | Many failures in `prepare.py` | the images don't have a dark background around the palm; the preprocessing is tuned for this dataset |
 | Fused results no better | expected on some data; the card's `fusion.calibration.eer_by_weight` shows the trade-off |
 | Training very slow | use a GPU (Colab T4); on CPU, reduce `--epochs` |
+| Web app: "asset bundle missing" | run `topcoat asset bundle -p palmprint-web --release` in `rust/` |
+| Web app build says Rust is too old | `rustup update` (Topcoat needs 1.99 or newer); the CLI alone builds on older Rust |
+| Web app training fails at once with "No module named …" | start it with `PP_PYTHON` pointing at the Python that has `training/requirements.txt` installed |
+| Combined weight comes out 0 (palm lines only) | the network is under-trained; train longer or with ImageNet start |
 
 ## 12. Safe use
 

@@ -35,3 +35,8 @@ codegen-units = 1
 
 [profile.test]
 opt-level = 2
+
+[workspace]
+members = [".", "web"]
+# `cargo build` builds the CLI only; the web app needs Rust >= 1.99 (Topcoat): `cargo build -p palmprint-web`
+default-members = ["."]
