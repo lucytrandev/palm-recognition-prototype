@@ -1,15 +1,94 @@
-# Palmprint Recognition for Authentication using Self-Supervised Learning
+# Palmprint Recognition: Python training, Rust inference
 
-> **Training in Python, inference in Rust:** `training/` (prepare → SupCon + SAM training → calibrated
-> threshold + MCC on unseen palms → ONNX + model card) feeds the Rust inference crate in `rust/`.
-> See [training/README.md](training/README.md) and the single-cell notebook `training/train_colab.ipynb`.
+Palmprint matching for authentication research. Upload a palm image and get the most similar palms in
+the database, scored by a CNN embedding fused with palm-ridge (palm-line) codes. If the image contains a
+face, it is shown with a 468-point triangulated mesh (display only, never matched).
 
-## Project Goal and Approach
+This is a fork of [lucytrandev/palm-recognition-prototype](https://github.com/lucytrandev/palm-recognition-prototype)
+by Lucy Tran. Her original Python/Streamlit prototype is described [further down](#original-prototype-lucy-tran-2025);
+this fork (branch `rust-inference`) splits it into a Python training pipeline and a Rust inference program.
+
+**New here? Read the [user guide](USER_GUIDE.md)**: training in Colab, building the database,
+calibrating, evaluating, the web page and the API, step by step.
+
+## How it fits together
+
+```
+ Python (training/)                                     Rust (rust/, inference only)
+ ──────────────────                                     ────────────────────────────
+ palm images ─► prepare.py (same preprocessing as Rust)
+             ─► train.py: SupCon + SAM, open-set split ─► model.onnx + model card ─► verify-model
+                  threshold at target FAR, test MCC                                   build-db: embeddings
+                                                                                         + ridge codes
+ calibrate_fusion.py ◄──── calibration-pair scores ◄───────────────────────────────── pair-scores
+   fusion weight + threshold ───► model card ───────────────────────────────────────► eval (CNN / ridges / fused)
+                                                                                       serve: web page + /v1/chat/completions
+```
+
+* **Training (Python):** identity-disjoint split (70 % train / 15 % calibration / 15 % test palms),
+  supervised-contrastive loss (or the original NT-Xent), AdamW with **SAM**, model selection by
+  calibration EER, threshold at a target false-accept rate, EER / TAR@FAR / **MCC** / cross-session
+  rank-1 on unseen palms. Exports ONNX, a model card and parity fixtures. See [training/README.md](training/README.md).
+* **Inference (Rust):** bit-exact port of the preprocessing, ONNX encoder, cosine matching re-ranked
+  with palm-ridge codes (CompCode) when a calibrated fusion is in the card, evaluation, a web page and
+  an OpenAI-compatible API. See [rust/README.md](rust/README.md).
+* **One notebook:** [`training/train_colab.ipynb`](training/train_colab.ipynb) runs everything in a
+  single Colab cell: data, training, Rust build, model check, database, fusion, test evaluation, an API
+  call and the Lean check.
+* **Proofs:** `rust/lean/Match.lean` (Lean 4.31, no `sorry`): match-rule properties, the threshold
+  rule keeps the calibration FAR ≤ target (`far_threshold_bound`, `far_le_alpha`), and the fused score
+  never drops when the CNN or ridge match improves (`fuse_mono`, `fuse_ends`).
+
+## Quick start
+
+```bash
+# training (GPU recommended) — or just run training/train_colab.ipynb in Colab
+pip install -r training/requirements.txt
+python training/prepare.py dataset/archive/session1 dataset/archive/session2 -o data/rois.npz
+python training/train.py data/rois.npz --out rust/models --epochs 40
+
+# inference
+cd rust && cargo build --release
+export ORT_DYLIB_PATH=$(python3 -c "import onnxruntime,os,glob;print(glob.glob(os.path.dirname(onnxruntime.__file__)+'/capi/libonnxruntime.so*')[0])")
+B=target/release/palmprint
+$B verify-model
+$B build-db ../dataset/archive/session1 ../dataset/archive/session2
+$B pair-scores --split cal --out ../data/cal_pairs.npy
+python ../training/calibrate_fusion.py ../data/cal_pairs.npy models/palmprint_encoder_512.card.json
+$B eval                      # CNN, ridges and fused on the unseen test palms
+$B serve                     # http://127.0.0.1:8501 and /v1/chat/completions
+```
+
+Without training, `cd rust && cargo build --release && target/release/palmprint serve` runs the
+original model against the committed database (CNN only, threshold 0.80, as the Streamlit app).
+
+## Status and limits
+
+* **Accuracy of the new pipeline on the real dataset is not measured yet**: Kaggle wasn't reachable
+  from the build environment. Everything was run end to end on synthetic hands (`training/synth.py`);
+  those numbers check the pipeline, not biometric accuracy. The original model's numbers on the
+  committed embeddings are in [rust/README.md](rust/README.md) (EER 14.1 %).
+* No liveness check; a printed palm could match. Not for access control as is.
+* The repository has no licence file of its own (inherited from the upstream fork); check before reuse.
+* Palm-ridge codes, the face detector and the face mesh come from
+  [dhaneshkk/test1_palm](https://github.com/dhaneshkk/test1_palm) (`palmid` crate, pinned revision).
+
+---
+
+# Original prototype (Lucy Tran, 2025)
+
+The sections below are the original author's description of the Python/Streamlit prototype that this
+fork builds on (ResNet-18 + 256-d projection head, NT-Xent, Streamlit UI at threshold 80 %). They still
+describe `app.py`, `self_supervised/` and `preprocess/`, which remain in the repository.
+
+## Palmprint Recognition for Authentication using Self-Supervised Learning
+
+### Project Goal and Approach
 
 
 This project implements a palmprint recognition system for authentication purposes. Due to the lack of labeled data for training, a self-supervised learning approach was adopted to learn meaningful feature representations from a large dataset of unlabeled palmprint images. The system utilizes contrastive learning to train a deep neural network to extract discriminative features, enabling palmprint matching and similarity comparison.  Finally, a user-friendly web interface was built to demonstrate the system's functionality.
 
-## Dataset Description
+### Dataset Description
 For this project, a dataset of **12,000 unlabeled palmprint images** was used. The images are in **TIFF format** and were **obtained from the "Kaggle Palm Recognition Dataset for Authentication System"** dataset available on Kaggle ([https://www.kaggle.com/datasets/saqibshoaibdz/palm-dataset/data](https://www.kaggle.com/datasets/saqibshoaibdz/palm-dataset/data)).
 
 This dataset is described as containing high-quality images designed for training and evaluating palm recognition models for biometric authentication.  While the original dataset includes categories for palm detection, palm vein patterns, and palm print matching, this project utilizes the **palmprint images suitable for palm print matching**. The dataset consists of images with **relatively high quality, designed for real-world biometric authentication applications.** The images are expected to exhibit variations inherent in biometric data collection, but are generally intended to be high-quality for effective model training. Each image in the dataset is also associated with metadata within the original Kaggle dataset, though this project focuses on the image data itself for self-supervised learning.
@@ -21,7 +100,7 @@ This dataset is described as containing high-quality images designed for trainin
 *   **Source:**  [Palm Recognition Dataset for Authentication System from Kaggle](https://www.kaggle.com/datasets/saqibshoaibdz/palm-dataset/data)
 *   **Characteristics:** Images typically feature a dark background, which aids in segmenting the palm region from the surroundings. The dataset likely contains multiple images of palmprints from the same individual, reflecting a realistic biometric authentication scenario and hinting at potential for future identity-based analysis.While designed to be high quality, the dataset likely includes natural variations in palm appearance due to individual differences, minor pose variations, and subtle changes in skin texture.
 
-## Image Preprocessing
+### Image Preprocessing
 
 Before feature extraction, palmprint images undergo a preprocessing pipeline to enhance relevant features and standardize the input for the model. The key stages are:
 
@@ -33,7 +112,7 @@ Before feature extraction, palmprint images undergo a preprocessing pipeline to 
 6.  **ROI Resizing:** The extracted ROI is resized to a standardized `(138x138)` pixel size to ensure consistent input dimensions for the feature extraction model.
 7.  **ROI Normalization:** Finally, the pixel values of the resized ROI are normalized to the range of `[0, 1]` by dividing by `255.0`. This step helps in stabilizing and accelerating the training of the deep learning model.
 
-### **Example Preprocessing Stages:**
+#### Example Preprocessing Stages
 
 Below are example images illustrating the key stages of the preprocessing pipeline applied to a sample palmprint image from the dataset, displayed in a horizontal flow:
 
@@ -88,7 +167,7 @@ Below are example images illustrating the key stages of the preprocessing pipeli
 
 
 ---
-## Self-Supervised Learning Method Used
+### Self-Supervised Learning Method Used
 
 This project employed a **contrastive learning** approach, specifically inspired by **SimCLR (Simple Contrastive Learning for Representations)**.  Since the dataset is unlabeled, self-supervised learning was crucial to learn meaningful feature representations.
 
@@ -103,7 +182,7 @@ This contrastive objective forces the model to learn features that are invariant
 
 **Loss Function:** The training process utilizes the **NT-Xent (Normalized Temperature-scaled Cross Entropy) Loss** function to achieve this objective. This loss function, with a **temperature parameter of 0.07**, encourages similar embeddings for positive pairs and dissimilar embeddings for negative pairs in a normalized embedding space. By minimizing this loss, the model learns to extract robust and discriminative features from the unlabeled palmprint images.
 
-## Model Architecture
+### Model Architecture
 
 <table>
   <tr>
@@ -127,7 +206,7 @@ This architecture was chosen to leverage the powerful feature extraction capabil
 </table>
 
 
-## Training Process
+### Training Process
 
 The self-supervised model was trained using PyTorch. The training process involved:
 
@@ -143,7 +222,7 @@ The self-supervised model was trained using PyTorch. The training process involv
     *   `GaussianBlur`
 *   **Training Procedure:** The training loss was monitored, and the model weights were updated using backpropagation with the Adam optimizer to minimize the NT-Xent loss. The model learned to create embeddings where augmented views of the same palmprint are close together, and views of different palmprints are far apart in the embedding space.
 
-## UI Functionality
+### UI Functionality
 
 *   **Framework used:** Streamlit
 *   **Key features:** Image upload, display of uploaded image, display of top matching palmprints from database, similarity scores, indication of match/no match.
@@ -162,7 +241,7 @@ The UI allows users to easily test the palmprint recognition system by uploading
 
 _The demo showcases the palmprint recognition system's ability to identify palmprints from the same individual.  By using one of the original palmprint images (that was excluded from the training dataset), the model successfully located the other corresponding palmprint images in the database (from the same person) with similarity scores consistently around 90%._
 
-## How to Run the Code
+### How to Run the Code
 
 To run this project, navigate to the project directory, follow these steps:
 
@@ -178,7 +257,7 @@ To run this project, navigate to the project directory, follow these steps:
 
 3. **Access the UI:**  Open your web browser and go to the address provided by Streamlit (usually `http://localhost:8501`).
 
-## Key Libraries Used
+### Key Libraries Used
 
 *   **PyTorch:** Deep learning framework for model building and training.
 *   **torchvision:** PyTorch's library for computer vision tasks, including pre-trained models and image transformations.
